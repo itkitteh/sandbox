@@ -1,0 +1,32 @@
+#!/usr/sbin/nft -f
+# Kill switch. Only tun0 and the SOCKS proxy itself are reachable, so traffic
+# stops if sing-box dies instead of leaving through eth0.
+table inet sandbox_killswitch
+delete table inet sandbox_killswitch
+
+table inet sandbox_killswitch {
+	chain output {
+		type filter hook output priority 0; policy drop;
+		# Docker's embedded DNS resolves through the host, outside the proxy.
+		ip daddr 127.0.0.11 counter drop
+		oifname "lo" accept
+		ct state established,related accept
+		meta nfproto ipv6 counter drop
+		oifname "tun0" accept
+		ip daddr ${PROXY_HOST} tcp dport ${PROXY_PORT} accept
+		counter drop
+	}
+
+	chain input {
+		type filter hook input priority 0; policy drop;
+		iifname "lo" accept
+		ct state established,related accept
+		iifname "tun0" accept
+		ip saddr ${SANDBOX_SUBNET} tcp dport ${EDITOR_PORT} accept
+		counter drop
+	}
+
+	chain forward {
+		type filter hook forward priority 0; policy drop;
+	}
+}

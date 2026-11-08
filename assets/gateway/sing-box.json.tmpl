@@ -1,0 +1,43 @@
+{
+  "log": { "level": "warn", "timestamp": true },
+  "dns": {
+    "servers": [
+      { "type": "https", "tag": "remote", "server": "1.1.1.1", "detour": "proxy" }
+    ],
+    "final": "remote",
+    "strategy": "ipv4_only"
+  },
+  "inbounds": [
+    {
+      "type": "tun",
+      "tag": "tun-in",
+      "interface_name": "tun0",
+      "address": ["172.19.0.1/30"],
+      "mtu": 1500,
+      "auto_route": true,
+      "strict_route": true,
+      "stack": "gvisor",
+      "route_exclude_address": ["${PROXY_HOST}/32", "${SANDBOX_SUBNET}"]
+    }
+  ],
+  "outbounds": [
+    {
+      "type": "socks",
+      "tag": "proxy",
+      "server": "${PROXY_HOST}",
+      "server_port": ${PROXY_PORT},
+      "version": "5",
+      "network": "tcp"
+    }
+  ],
+  "route": {
+    "rules": [
+      { "action": "sniff" },
+      { "protocol": "dns", "action": "hijack-dns" },
+      { "ip_is_private": true, "action": "reject" },
+      { "network": "udp", "action": "reject" }
+    ],
+    "final": "proxy",
+    "default_domain_resolver": "remote"
+  }
+}

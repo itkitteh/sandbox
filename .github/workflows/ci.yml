@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  lint-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - run: go vet ./... && go vet -tags integration ./test/...
+      - run: go test -race ./...
+      - uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.15.0
+      - run: shellcheck assets/gateway/entrypoint.sh assets/image/*.sh
+      - uses: hadolint/hadolint-action@v3.5.0
+        with:
+          dockerfile: assets/gateway/Dockerfile
+      - uses: hadolint/hadolint-action@v3.5.0
+        with:
+          dockerfile: assets/image/Dockerfile
+
+  integration:
+    needs: lint-test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      # A stand-in for the router's proxy. It exits from the runner's own IP,
+      # hence SANDBOX_IT_SAME_EGRESS.
+      - name: Start a SOCKS5 proxy on docker0
+        run: |
+          sudo apt-get update -q && sudo apt-get install -yq microsocks
+          ip=$(ip -4 -o addr show docker0 | awk '{print $4}' | cut -d/ -f1)
+          nohup microsocks -i "$ip" -p 1080 >/tmp/microsocks.log 2>&1 &
+          echo "SANDBOX_IT_PROXY=$ip:1080" >> "$GITHUB_ENV"
+      - run: go test -tags integration -count=1 -v ./test/integration/
+        env:
+          SANDBOX_IT_SAME_EGRESS: "1"
+      - if: failure()
+        run: cat /tmp/microsocks.log

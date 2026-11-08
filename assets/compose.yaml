@@ -1,0 +1,80 @@
+# Run through the `sandbox` CLI, which supplies --env-file and --project-directory.
+name: sandbox
+
+x-workspace-env: &workspace-env
+  TZ: UTC
+  # Env vars beat any user.name/user.email in a mounted repo's .git/config.
+  GIT_AUTHOR_NAME: ${GIT_NAME:?set GIT_NAME in the sandbox config}
+  GIT_AUTHOR_EMAIL: ${GIT_EMAIL:?set GIT_EMAIL in the sandbox config}
+  GIT_COMMITTER_NAME: ${GIT_NAME}
+  GIT_COMMITTER_EMAIL: ${GIT_EMAIL}
+  GIT_EMAIL: ${GIT_EMAIL}
+  OPENCODE_MODEL: ${OPENCODE_MODEL:-}
+  OPENCODE_SMALL_MODEL: ${OPENCODE_SMALL_MODEL:-}
+
+x-workspace: &workspace
+  image: sandbox-workspace:${SANDBOX_IMAGE_TAG:-local}
+  build:
+    context: ./image
+    args:
+      BUILD_PROXY: ${BUILD_PROXY:-}
+  # Shares the gateway's network namespace: no interface of its own, so every
+  # packet goes through the gateway's tun0 and kill switch.
+  network_mode: service:gateway
+  depends_on:
+    gateway:
+      condition: service_healthy
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  init: true
+  volumes:
+    - home:/home/dev
+    - ./gateway/resolv.conf:/etc/resolv.conf:ro
+
+services:
+  gateway:
+    image: sandbox-gateway:${SANDBOX_IMAGE_TAG:-local}
+    build: ./gateway
+    hostname: dev
+    cap_add: [NET_ADMIN]
+    devices: [/dev/net/tun]
+    restart: unless-stopped
+    environment:
+      PROXY_HOST: ${PROXY_HOST:?set PROXY_HOST in the sandbox config}
+      PROXY_PORT: ${PROXY_PORT:?set PROXY_PORT in the sandbox config}
+      SANDBOX_SUBNET: ${SANDBOX_SUBNET:-172.29.250.0/24}
+      EDITOR_PORT: "8443"
+    volumes:
+      - secrets:/var/lib/sandbox-secrets
+      - ./gateway/resolv.conf:/etc/resolv.conf:ro
+    ports:
+      - 127.0.0.1:${EDITOR_HOST_PORT:-8443}:8443
+    networks: [sandbox]
+
+  workspace:
+    <<: *workspace
+    environment: *workspace-env
+
+  editor:
+    <<: *workspace
+    profiles: [editor]
+    environment:
+      <<: *workspace-env
+      PASSWORD: ${EDITOR_PASSWORD:?run sandbox init}
+    command:
+      - code-server
+      - --bind-addr=0.0.0.0:8443
+      - --auth=password
+      - --disable-telemetry
+      - --disable-update-check
+      - /work
+
+networks:
+  sandbox:
+    ipam:
+      config:
+        - subnet: ${SANDBOX_SUBNET:-172.29.250.0/24}
+
+volumes:
+  home:
+  secrets:

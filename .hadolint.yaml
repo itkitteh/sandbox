@@ -1,0 +1,3 @@
+ignored:
+  - DL3008 # apt packages track the Debian release; images are rebuilt with `sandbox rebuild`
+  - DL3018 # same for apk

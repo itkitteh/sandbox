@@ -1,0 +1,29 @@
+version: "2"
+linters:
+  default: standard
+  enable:
+    - gosec
+    - misspell
+    - unconvert
+  settings:
+    errcheck:
+      exclude-functions:
+        - fmt.Fprintf
+        - fmt.Fprint
+        - fmt.Fprintln
+        - (*os.File).Close
+        - (io.Closer).Close
+        - (*os.Root).Close
+        - os.Remove
+        - os.RemoveAll
+    gosec:
+      excludes:
+        - G104 # errcheck covers unhandled errors, with its exclusions
+        - G204 # we build docker/git argv on purpose; args never pass through a shell
+        - G304 # paths come from the user's own config and flags
+  exclusions:
+    rules:
+      - path: _test\.go
+        linters: [errcheck, gosec]
+formatters:
+  enable: [gofmt]

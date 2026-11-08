@@ -1,0 +1,18 @@
+# Sourced from /etc/zsh/zshrc. Your own ~/.zshrc in the home volume runs after it.
+export PATH="$HOME/.opencode/bin:$HOME/.local/bin:$PATH"
+export EDITOR=nvim
+eval "$(mise activate zsh)"
+
+HISTFILE="$HOME/.zsh_history"
+HISTSIZE=50000
+SAVEHIST=50000
+setopt share_history hist_ignore_dups
+autoload -Uz compinit && compinit -u
+bindkey -e
+
+PROMPT='%F{magenta}[sandbox]%f %F{cyan}%~%f %# '
+
+sandbox-keyinfo() {
+	echo "Add this to GitHub (Settings > SSH and GPG keys) as an Authentication and a Signing key:"
+	cat "$HOME/.ssh/id_ed25519.pub"
+}
