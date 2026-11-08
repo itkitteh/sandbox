@@ -20,9 +20,9 @@ import (
 
 // Options tune the run.
 type Options struct {
-	// SameEgressOK skips "proxy egress differs from direct egress". CI needs it
-	// because its stand-in proxy exits from the runner's own IP.
-	SameEgressOK bool
+	// CompareDirect also looks up the host's direct IP at the same echo service.
+	// That pairs your home IP with the proxy's exit IP there, so it is opt-in.
+	CompareDirect bool
 	// Spend runs one real opencode prompt, which costs a few tokens.
 	Spend bool
 	// Skip names checks to skip.
@@ -39,6 +39,8 @@ type env struct {
 	cfg   config.Config
 	opts  Options
 	probe string
+	// egress is the workspace's exit IP, set by checkEgress.
+	egress string
 }
 
 type probe struct {
@@ -47,7 +49,9 @@ type probe struct {
 }
 
 var probes = []probe{
-	{"egress goes through the proxy", checkEgress},
+	{"workspace reaches the internet", checkEgress},
+	{"exit IP is in EXPECTED_EGRESS", checkExpectedEgress},
+	{"exit IP differs from the host's direct IP (--compare-direct)", checkDirectDiffers},
 	{"kill switch blocks direct egress", checkKillSwitch},
 	{"DNS resolves only through the tunnel", checkDNS},
 	{"LAN, router and host are unreachable", checkUnreachable},
@@ -161,26 +165,84 @@ func (e *env) proxy() string {
 
 const ipEcho = "https://api.ipify.org"
 
+// The echo service only ever sees the workspace, which exits through the
+// proxy. Asking it from the host too would pair your home IP with the proxy's.
 func checkEgress(e *env) error {
-	inside, code := e.ws("curl -fsS -m 15 " + ipEcho)
-	if code != 0 || net.ParseIP(inside) == nil {
-		return fmt.Errorf("no egress from the workspace: %s", inside)
+	ip, code := e.ws("curl -fsS -m 15 " + ipEcho)
+	if code != 0 || net.ParseIP(ip) == nil {
+		return fmt.Errorf("no egress from the workspace: %s", ip)
 	}
-	via, code := host("curl", "-fsS", "-m", "15", "--socks5-hostname", e.proxy(), ipEcho)
-	if code != 0 {
-		return fmt.Errorf("host cannot use the proxy %s: %s", e.proxy(), via)
+	e.egress = ip
+	return nil
+}
+
+func checkExpectedEgress(e *env) error {
+	if e.egress == "" {
+		return errors.New("no exit IP to compare (see the check above)")
 	}
-	if inside != via {
-		return fmt.Errorf("workspace exits from %s, but the proxy exits from %s", inside, via)
+	spec := e.cfg["EXPECTED_EGRESS"]
+	if strings.TrimSpace(spec) == "" {
+		return errSkip{fmt.Sprintf("workspace exits from %s; once you have confirmed that is the proxy's exit, "+
+			"set EXPECTED_EGRESS='%s' in the config to verify it on every run", e.egress, e.egress)}
 	}
-	if e.opts.SameEgressOK {
-		return nil
+	ok, err := MatchEgress(e.egress, spec)
+	if err != nil {
+		return fmt.Errorf("EXPECTED_EGRESS: %w", err)
 	}
-	direct, code := host("curl", "-fsS", "-m", "15", ipEcho)
-	if code == 0 && direct == inside {
-		return fmt.Errorf("workspace egress %s equals the host's direct egress; is the proxy actually tunnelling?", inside)
+	if !ok {
+		return fmt.Errorf("workspace exits from %s, which is not in EXPECTED_EGRESS (%s); is the proxy exiting directly?", e.egress, spec)
 	}
 	return nil
+}
+
+func checkDirectDiffers(e *env) error {
+	if !e.opts.CompareDirect {
+		return errSkip{"opt-in: it shows the echo service your home IP next to the proxy's"}
+	}
+	if e.egress == "" {
+		return errors.New("no exit IP to compare (see the check above)")
+	}
+	direct, code := host("curl", "-fsS", "-m", "15", ipEcho)
+	if code != 0 {
+		return fmt.Errorf("direct lookup from the host failed: %s", direct)
+	}
+	if direct == e.egress {
+		return fmt.Errorf("workspace exit IP %s equals the host's direct IP; is the proxy actually tunnelling?", e.egress)
+	}
+	return nil
+}
+
+// MatchEgress reports whether ip matches any entry of spec, a comma- or
+// space-separated list of IPs and CIDR ranges.
+func MatchEgress(ip, spec string) (bool, error) {
+	addr := net.ParseIP(ip)
+	if addr == nil {
+		return false, fmt.Errorf("%q is not an IP", ip)
+	}
+	entries := strings.FieldsFunc(spec, func(r rune) bool { return r == ',' || r == ' ' })
+	if len(entries) == 0 {
+		return false, errors.New("empty list")
+	}
+	for _, entry := range entries {
+		if strings.Contains(entry, "/") {
+			_, n, err := net.ParseCIDR(entry)
+			if err != nil {
+				return false, fmt.Errorf("bad range %q", entry)
+			}
+			if n.Contains(addr) {
+				return true, nil
+			}
+			continue
+		}
+		want := net.ParseIP(entry)
+		if want == nil {
+			return false, fmt.Errorf("bad IP %q", entry)
+		}
+		if want.Equal(addr) {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 func checkKillSwitch(e *env) error {

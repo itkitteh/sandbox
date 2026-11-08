@@ -38,7 +38,7 @@ jobs:
         with:
           go-version-file: go.mod
       # A stand-in for the router's proxy. It exits from the runner's own IP,
-      # hence SANDBOX_IT_SAME_EGRESS.
+      # so EXPECTED_EGRESS stays unset and that check is skipped.
       - name: Start a SOCKS5 proxy on docker0
         run: |
           sudo apt-get update -q && sudo apt-get install -yq microsocks
@@ -46,7 +46,5 @@ jobs:
           nohup microsocks -i "$ip" -p 1080 >/tmp/microsocks.log 2>&1 &
           echo "SANDBOX_IT_PROXY=$ip:1080" >> "$GITHUB_ENV"
       - run: go test -tags integration -count=1 -v ./test/integration/
-        env:
-          SANDBOX_IT_SAME_EGRESS: "1"
       - if: failure()
         run: cat /tmp/microsocks.log

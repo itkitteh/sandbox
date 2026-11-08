@@ -4,7 +4,8 @@
 // SOCKS proxy. It uses its own project, subnet and editor port, so it does not
 // touch your everyday sandbox.
 //
-//	SANDBOX_IT_PROXY=10.0.0.1:1080 go test -tags integration ./test/integration/
+//	SANDBOX_IT_PROXY=10.0.0.1:1080 SANDBOX_IT_EXPECTED_EGRESS=<proxy exit IP> \
+//	  go test -tags integration ./test/integration/
 package integration
 
 import (
@@ -56,6 +57,7 @@ func setup(t *testing.T) *harness {
 	if err != nil {
 		t.Fatal(err)
 	}
+	cfg["EXPECTED_EGRESS"] = os.Getenv("SANDBOX_IT_EXPECTED_EGRESS")
 	cfg["EDITOR_HOST_PORT"] = "18443"
 	cfg["SANDBOX_SUBNET"] = "172.29.251.0/24"
 	if err := cfg.Save(cfgPath); err != nil {
@@ -88,11 +90,7 @@ func TestSandbox(t *testing.T) {
 	h := setup(t)
 
 	t.Run("leak checks pass", func(t *testing.T) {
-		args := []string{"check", "--skip", "keyproxy reaches OpenRouter and the key stays out of the workspace"}
-		if os.Getenv("SANDBOX_IT_SAME_EGRESS") == "1" {
-			args = append(args, "--same-egress-ok")
-		}
-		out := h.ok(args...)
+		out := h.ok("check", "--skip", "keyproxy reaches OpenRouter and the key stays out of the workspace")
 		if strings.Contains(out, "FAIL") {
 			t.Fatalf("check output:\n%s", out)
 		}

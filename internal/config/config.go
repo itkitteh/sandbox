@@ -16,7 +16,7 @@ import (
 
 // Keys written by Init, in file order. Other keys in the file are kept.
 var Keys = []string{
-	"PROXY_HOST", "PROXY_PORT", "BUILD_PROXY",
+	"PROXY_HOST", "PROXY_PORT", "BUILD_PROXY", "EXPECTED_EGRESS",
 	"GIT_NAME", "GIT_EMAIL",
 	"OPENCODE_MODEL", "OPENCODE_SMALL_MODEL",
 	"EDITOR_PASSWORD", "EDITOR_HOST_PORT",

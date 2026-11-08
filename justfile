@@ -16,9 +16,9 @@ install:
 test:
     go test ./...
 
-# End-to-end tests against Docker and a real SOCKS proxy
-test-integration proxy="10.0.0.1:1080":
-    SANDBOX_IT_PROXY={{ proxy }} go test -tags integration -count=1 -v ./test/integration/
+# End-to-end tests against Docker and a real SOCKS proxy (expected_egress: proxy exit IP or CIDR)
+test-integration proxy="10.0.0.1:1080" expected_egress="":
+    SANDBOX_IT_PROXY={{ proxy }} SANDBOX_IT_EXPECTED_EGRESS={{ expected_egress }} go test -tags integration -count=1 -v ./test/integration/
 
 # Go, shell and Dockerfile linters
 lint:

@@ -244,7 +244,7 @@ func (a *app) checkCmd() *cobra.Command {
 		},
 	}
 	c.Flags().BoolVar(&opts.Spend, "spend", false, "also run one real opencode prompt (costs a few tokens)")
-	c.Flags().BoolVar(&opts.SameEgressOK, "same-egress-ok", false, "allow proxy egress to equal direct egress (CI stand-in proxy)")
+	c.Flags().BoolVar(&opts.CompareDirect, "compare-direct", false, "also compare against the host's direct IP (shows the echo service both IPs)")
 	c.Flags().StringSliceVar(&opts.Skip, "skip", nil, "check names to skip")
 	return c
 }

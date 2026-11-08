@@ -29,6 +29,12 @@ pbpaste | sandbox key set openrouter
 sandbox check                # leak checks; the first run builds the images
 ```
 
+To have `sandbox check` verify the proxy's exit IP on every run, set
+`EXPECTED_EGRESS` in the config to that IP or range. The first check run prints
+the IP it saw. The check never looks up your host's direct IP, because asking
+one service for both IPs at once would link them. `--compare-direct` does that
+comparison anyway, if you accept that.
+
 In the first session, log in to the separate GitHub account and register the
 SSH key the sandbox generated:
 
