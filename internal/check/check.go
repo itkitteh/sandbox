@@ -58,6 +58,7 @@ var probes = []probe{
 	{"no host credentials, sockets or capabilities", checkHostLeaks},
 	{"commits use the sandbox identity in UTC", checkIdentity},
 	{"keyproxy reaches OpenRouter and the key stays out of the workspace", checkKeyproxy},
+	{"opencode is wired to keyproxy and knows its model", checkOpencodeConfig},
 	{"opencode completes a prompt (--spend)", checkOpencode},
 	{"editor answers on localhost", checkEditor},
 }
@@ -366,6 +367,49 @@ func checkKeyproxy(e *env) error {
 		return fmt.Errorf("keyproxy returned %q", status)
 	}
 	return e.noKeyInEnv()
+}
+
+const keyproxyURL = "http://127.0.0.1:4000/api/v1"
+
+// checkOpencodeConfig reads opencode's resolved config, so a system config it
+// silently skipped shows up here instead of as a vague error mid-prompt.
+func checkOpencodeConfig(e *env) error {
+	raw, code := e.ws("$HOME/.opencode/bin/opencode debug config 2>/dev/null")
+	if code != 0 {
+		return fmt.Errorf("opencode debug config (exit %d): %s", code, raw)
+	}
+	var cfg struct {
+		Share    string `json:"share"`
+		Model    string `json:"model"`
+		Provider map[string]struct {
+			Options struct {
+				BaseURL string `json:"baseURL"`
+			} `json:"options"`
+		} `json:"provider"`
+	}
+	if err := json.Unmarshal([]byte(raw), &cfg); err != nil {
+		return fmt.Errorf("parse opencode config: %v", err)
+	}
+	if got := cfg.Provider["openrouter"].Options.BaseURL; got != keyproxyURL {
+		return fmt.Errorf("openrouter baseURL is %q, want %s; is /etc/opencode/opencode.json readable?", got, keyproxyURL)
+	}
+	if cfg.Share != "disabled" {
+		return fmt.Errorf("share is %q, want \"disabled\"", cfg.Share)
+	}
+	provider, model, ok := strings.Cut(cfg.Model, "/")
+	if !ok || provider != "openrouter" {
+		return errSkip{fmt.Sprintf("model %q does not use keyproxy; not checking it", cfg.Model)}
+	}
+	models, code := e.ws("$HOME/.opencode/bin/opencode models openrouter 2>&1")
+	if code != 0 {
+		return fmt.Errorf("opencode models openrouter: %s", models)
+	}
+	for _, line := range strings.Fields(models) {
+		if line == cfg.Model || line == model {
+			return nil
+		}
+	}
+	return fmt.Errorf("opencode does not know model %q; pick one from `opencode models openrouter` and set it in ~/.config/opencode/opencode.json", cfg.Model)
 }
 
 // noKeyInEnv fails if any project container has an OpenRouter key in its env.

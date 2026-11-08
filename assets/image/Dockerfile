@@ -41,6 +41,9 @@ RUN useradd --uid 1000 --user-group --create-home --shell /usr/bin/zsh dev \
  && mkdir -p /work /home/dev/.local/bin \
  && chown -R dev:dev /work /home/dev
 
+# Create the dir first: COPY --chmod also applies the file mode to directories
+# it creates, which left /etc/opencode untraversable and the config ignored.
+RUN install -d -m 0755 /etc/opencode
 COPY --chmod=0644 opencode.json /etc/opencode/opencode.json
 COPY --chmod=0644 zshrc /etc/zsh/zshrc.sandbox
 COPY --chmod=0755 entrypoint.sh /usr/local/bin/workspace-entrypoint
